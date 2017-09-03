@@ -13,6 +13,7 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <fcntl.h>
+#include <pthread.h>
 
 #define  SHR_MEM_NOT_READY  0
 #define  SHR_MEM_FILLED     1
@@ -26,6 +27,56 @@ typedef struct
 
 #define SHARED_MEMORY_OBJECT_NAME "my_shared_memory"
 #define SHARED_MEMORY_OBJECT_SIZE sizeof(SQR_SHR_MEM_OBJ)
+
+
+void processA()
+{
+
+	return;
+}
+
+void processB()
+{
+
+	return;
+}
+
+void * readValFromSharedMem(void *arg)
+{
+
+
+	return NULL;
+}
+
+void * showThatImAlive(void *arg)
+{
+
+	return NULL;
+}
+
+int processC()
+{
+	int id1, id2, result;
+	pthread_t thread1, thread2;
+
+	id1 = 10;
+
+	result = pthread_create(&thread1, NULL, readValFromSharedMem, &id1);
+	if (result != 0) {
+		perror("Создание первого потока!");
+		return EXIT_FAILURE;
+	}
+
+	id2 = 5;
+	result = pthread_create(&thread2, NULL, showThatImAlive, &id2);
+	if (result != 0) {
+		perror("Создание второго потока");
+		return EXIT_FAILURE;
+	}
+
+
+	return EXIT_SUCCESS;
+}
 
 int main()
 {
