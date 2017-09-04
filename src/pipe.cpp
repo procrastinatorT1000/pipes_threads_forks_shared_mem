@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <iostream>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
@@ -27,7 +28,7 @@
 typedef struct
 {
 	int operationStatus;	/* SHR_MEM_NOT_READY, SHR_MEM_FILLED or SHR_MEM_TAKEN */
-	long sqrVal;
+	long long sqrVal;
 }SQR_SHR_MEM_OBJ;
 
 typedef struct
@@ -62,13 +63,15 @@ void terminateMainProcHandl (int sig)
 void processA(int writePD)
 {
 	size_t writenBlen = 0;
-	const char some_data[] = "123";
+//	const char some_data[10] = "123";
+	int val;
 
 	 while(!terminateMainProc)
 	 {
-		 writenBlen = write(writePD, some_data, strlen(some_data));
-		  printf("Wrote %d bytes\n", writenBlen);
-		  sleep(1);
+		std::cin >> val;
+		writenBlen = write(writePD, &val, sizeof(val));
+		printf("Wrote %d bytes\n", (int)writenBlen);
+		sleep(1);
 	 }
 
 	 printf("Got signal for terminating main process\n");
@@ -141,24 +144,23 @@ int processB(int readPD)
 		 default:
 		 {
 			int readBlen = 0;
-			char buffer[BUFSIZ + 1];
-			memset(buffer, 0, sizeof(buffer));
+			int readVal = 0;
 
 			 while(!terminateProcB)
 			 {
-				 static int i = 0;
-				  readBlen = read(readPD, buffer, BUFSIZ);
-				  printf("Read %d bytes: %s\n", readBlen, buffer);
+				  readBlen = read(readPD, &readVal, sizeof(readVal));
+				  printf("Read %d bytes: %d\n", readBlen, readVal);
 
 
 
 				  if(pShrMemObj->operationStatus == SHR_MEM_TAKEN ||
 						  pShrMemObj->operationStatus == SHR_MEM_NOT_READY)
 				  {
-					  printf("Val SENT with ShrMEM %d\n", i);
-					  pShrMemObj->sqrVal = i;
+					  long long sqr = (long long) readVal;
+					  sqr *= sqr;
+					  pShrMemObj->sqrVal = sqr;
 					  pShrMemObj->operationStatus = SHR_MEM_FILLED;
-					  i++;
+					  printf("Val SENT with ShrMEM %lld\n", pShrMemObj->sqrVal);
 				  }
 				  sleep(2);
 			 }
@@ -191,12 +193,11 @@ void * readValFromSharedMem(void *arg)
 
 	while(1)
 	{
-		printf("C1 alive\n");
 		if(pShrMemObj->operationStatus == SHR_MEM_FILLED)
 		{
-			if(pShrMemObj->sqrVal == 5)
+			if(pShrMemObj->sqrVal == 100)
 				kill(getppid(), SIGUSR1);
-			printf("Val GET with ShrMEM %d\n", pShrMemObj->sqrVal);
+			printf("Val GET with ShrMEM %lld\n", pShrMemObj->sqrVal);
 			pShrMemObj->operationStatus = SHR_MEM_TAKEN;
 		}
 		sleep(1);
@@ -210,7 +211,7 @@ void * showThatImAlive(void *arg)
 	while(1)
 	{
 		printf("I'm alive!\n");
-		sleep(1);
+		sleep(10);
 	}
 
 	return NULL;
