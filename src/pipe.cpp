@@ -37,15 +37,21 @@ typedef struct
 }THREAD_ARG;
 
 int processC(SQR_SHR_MEM_OBJ *pShrMem);
+int waitForProcessFinishing(pid_t pid);
 
 /* When a SIGUSR1 signal arrives, set this variable. */
-volatile sig_atomic_t usrTerminateInt = 0;
+volatile sig_atomic_t terminateProcB = 0;
+volatile sig_atomic_t terminateMainProc = 0;
 
-void terminateSignal1 (int sig)
+void terminateProcBHandl (int sig)
 {
-	usrTerminateInt = 1;
+	terminateProcB = 1;
 }
 
+void terminateMainProcHandl (int sig)
+{
+	terminateMainProc = 1;
+}
 
 /*
  * Process A, reads stdI and writes it to pipe
@@ -58,12 +64,14 @@ void processA(int writePD)
 	size_t writenBlen = 0;
 	const char some_data[] = "123";
 
-	 for(int i = 0; i < 20; i++)
+	 while(!terminateMainProc)
 	 {
 		 writenBlen = write(writePD, some_data, strlen(some_data));
 		  printf("Wrote %d bytes\n", writenBlen);
 		  sleep(1);
 	 }
+
+	 printf("Got signal for terminating main process\n");
 
 	return;
 }
@@ -79,47 +87,45 @@ void processA(int writePD)
  * */
 int processB(int readPD)
 {
-	 int shm = 0;
-	 SQR_SHR_MEM_OBJ *pShrMemObj = NULL;
+		int shm = 0;
+		SQR_SHR_MEM_OBJ *pShrMemObj = NULL;
 
-	 if ( (shm = shm_open(SHARED_MEMORY_OBJECT_NAME, O_CREAT|O_RDWR, S_IRWXO|S_IRWXG|S_IRWXU)) == -1 )
-	 {
-		perror("shm_open");
-		return 1;
-	 }
+		/* open shared memory */
+		if ( (shm = shm_open(SHARED_MEMORY_OBJECT_NAME, O_CREAT|O_RDWR, S_IRWXO|S_IRWXG|S_IRWXU)) == -1 )
+		{
+			perror("shm_open");
+			return 1;
+		}
 
-	 if ( ftruncate(shm, SHARED_MEMORY_OBJECT_SIZE+1) == -1 )
-	 {
-		perror("ftruncate");
-		return 1;
-	 }
+		if ( ftruncate(shm, SHARED_MEMORY_OBJECT_SIZE+1) == -1 )
+		{
+			perror("ftruncate");
+			return 1;
+		}
 
-	 if ( (pShrMemObj = (SQR_SHR_MEM_OBJ *) mmap(0, SHARED_MEMORY_OBJECT_SIZE+1,
-			 	 PROT_WRITE|PROT_READ, MAP_SHARED, shm, 0)) == (void*)-1 )
-	 {
-		 perror("mmap");
-		 return 1;
-	 }
+		if ( (pShrMemObj = (SQR_SHR_MEM_OBJ *) mmap(0, SHARED_MEMORY_OBJECT_SIZE+1,
+			 PROT_WRITE|PROT_READ, MAP_SHARED, shm, 0)) == (void*)-1 )
+		{
+			perror("mmap");
+			return 1;
+		}
 
-	 memset(pShrMemObj, 0, SHARED_MEMORY_OBJECT_SIZE);
+		memset(pShrMemObj, 0, SHARED_MEMORY_OBJECT_SIZE);
 
-	 pid_t pid1 = -1;
-
+		pid_t pidCProc = -1;
 		struct sigaction usr_action;
 		sigset_t block_mask;
-		pid_t child_id;
-
-		/* Establish the signal handler. */
+		/* Establish the signal handler for halting proc B */
 		sigfillset(&block_mask);
-		usr_action.sa_handler = terminateSignal1;
+		usr_action.sa_handler = terminateProcBHandl;
 		usr_action.sa_mask = block_mask;
 		usr_action.sa_flags = 0;
 		sigaction(SIGUSR1, &usr_action, NULL);
 
 
-	 pid1 = fork();
+	 pidCProc = fork();
 
-	 switch(pid1)
+	 switch(pidCProc)
 	 {
 		 case 0:
 			 /** Process C */
@@ -138,12 +144,8 @@ int processB(int readPD)
 			char buffer[BUFSIZ + 1];
 			memset(buffer, 0, sizeof(buffer));
 
-			printf("B ProcG %d\n", getgid());
-
-			 while(!usrTerminateInt)
+			 while(!terminateProcB)
 			 {
-				 printf("B\n");
-
 				 static int i = 0;
 				  readBlen = read(readPD, buffer, BUFSIZ);
 				  printf("Read %d bytes: %s\n", readBlen, buffer);
@@ -163,30 +165,16 @@ int processB(int readPD)
 
 			 printf("Got terminating signal\n");
 
-			 if(kill(pid1, SIGKILL))
-				 printf("Kill Error\n");
-			 int wstatus;
-			 do {
-				pid_t w = waitpid(pid1, &wstatus, WUNTRACED | WCONTINUED);
-				if (w == -1) {
-					perror("waitpid");
-					exit(EXIT_FAILURE);
-				}
+			 if(kill(pidCProc, SIGKILL))
+				 perror("CProc kill Error\n");
 
-				if (WIFEXITED(wstatus)) {
-					printf("exited, status=%d\n", WEXITSTATUS(wstatus));
-				} else if (WIFSIGNALED(wstatus)) {
-					printf("killed by signal %d\n", WTERMSIG(wstatus));
-				} else if (WIFSTOPPED(wstatus)) {
-					printf("stopped by signal %d\n", WSTOPSIG(wstatus));
-				} else if (WIFCONTINUED(wstatus)) {
-					printf("continued\n");
-				}
-			} while (!WIFEXITED(wstatus) && !WIFSIGNALED(wstatus));
+			 waitForProcessFinishing(pidCProc);
 
-			munmap(pShrMemObj, SHARED_MEMORY_OBJECT_SIZE+1);
+			munmap(pShrMemObj, SHARED_MEMORY_OBJECT_SIZE+1);	/* close shared memory */
 			close(shm);
 			shm_unlink(SHARED_MEMORY_OBJECT_NAME);
+
+			kill(getppid(), SIGUSR2);	/* Tell main process about finishing */
 
 			break;
 		 }
@@ -200,10 +188,6 @@ void * readValFromSharedMem(void *arg)
 {
 	THREAD_ARG *pThreadArg = (THREAD_ARG *) arg;
 	SQR_SHR_MEM_OBJ *pShrMemObj = pThreadArg->pShrMem;
-
-	printf("proc C1 id=%d\n", pThreadArg->id);
-	printf ("I'm here!!!  My pid is %d.\n", (int) getpid ());
-	printf("ProcG %d\n", getgid());
 
 	while(1)
 	{
@@ -223,10 +207,6 @@ void * readValFromSharedMem(void *arg)
 
 void * showThatImAlive(void *arg)
 {
-	printf("proc C2 id=%d\n", *(int*)arg);
-	printf ("I'm here!!!  My pid is %d.\n", (int) getpid ());
-	printf("ProcG %d\n", getgid());
-
 	while(1)
 	{
 		printf("I'm alive!\n");
@@ -242,9 +222,6 @@ int processC(SQR_SHR_MEM_OBJ *pShrMem)
 	pthread_t thread1, thread2;
 	THREAD_ARG thread1Arg;
 
-	printf ("Initial C  My pid is %d.\n", (int) getpid ());
-	printf("ProcG %d\n", getgid());
-
 	thread1Arg.id = 1;
 	thread1Arg.pShrMem = pShrMem;
 
@@ -252,7 +229,7 @@ int processC(SQR_SHR_MEM_OBJ *pShrMem)
 	status = pthread_create(&thread1, NULL, readValFromSharedMem, &thread1Arg);
 	if (status != 0)
 	{
-		perror("Создание первого потока!");
+		perror("Creating First thread Err\n");
 		return EXIT_FAILURE;
 	}
 
@@ -260,33 +237,59 @@ int processC(SQR_SHR_MEM_OBJ *pShrMem)
 	status = pthread_create(&thread2, NULL, showThatImAlive, &id2);
 	if (status != 0)
 	{
-		perror("Создание второго потока");
+		perror("Creating Second thread Err\n");
 		return EXIT_FAILURE;
 	}
 
 	status = pthread_join(thread1, NULL);
 	if (status != 0)
 	{
-		perror("Ждём первый поток");
+		perror("Wait for 1st thread\n");
 		return EXIT_FAILURE;
 	}
 	else
 	{
-		printf("fir thread fin\n");
+		printf("1st thread fin\n");
 	}
 
 	status = pthread_join(thread2, NULL);
 	if (status != 0)
 	{
-		perror("Ждём второй поток");
+		perror("Wait for 2st thread\n");
 		return EXIT_FAILURE;
 	}
 	else
 	{
-		printf("sec thread fin\n");
+		printf("2nd thread fin\n");
 	}
 
 	return EXIT_SUCCESS;
+}
+
+int waitForProcessFinishing(pid_t pid)
+{
+	 int wstatus;
+
+	 do
+	 {
+		pid_t w = waitpid(pid, &wstatus, WUNTRACED | WCONTINUED);
+		if (w == -1) {
+			perror("waitpid");
+			exit(EXIT_FAILURE);
+		}
+
+		if (WIFEXITED(wstatus)) {
+			printf("exited, status=%d\n", WEXITSTATUS(wstatus));
+		} else if (WIFSIGNALED(wstatus)) {
+			printf("killed by signal %d\n", WTERMSIG(wstatus));
+		} else if (WIFSTOPPED(wstatus)) {
+			printf("stopped by signal %d\n", WSTOPSIG(wstatus));
+		} else if (WIFCONTINUED(wstatus)) {
+			printf("continued\n");
+		}
+	} while (!WIFEXITED(wstatus) && !WIFSIGNALED(wstatus));
+
+	 return wstatus;
 }
 
 int main()
@@ -295,11 +298,20 @@ int main()
 
 	if (pipe(file_pipes) == 0)
 	{
-		pid_t pid = -1;
+		pid_t pidBProc = -1;
 
-		pid = fork();
+		struct sigaction usr_action;
+		sigset_t block_mask;
+		/* Establish the signal handler for halting proc A */
+		sigfillset(&block_mask);
+		usr_action.sa_handler = terminateMainProcHandl;
+		usr_action.sa_mask = block_mask;
+		usr_action.sa_flags = 0;
+		sigaction(SIGUSR2, &usr_action, NULL);
 
-		switch(pid)
+		pidBProc = fork();
+
+		switch(pidBProc)
 		{
 			case 0:	/* child */
 			{
@@ -327,6 +339,8 @@ int main()
 				close(file_pipes[0]);	/* close unused read end of pipe */
 
 				processA(file_pipes[1]);	/* Reads stdI and writes pipe */
+
+				waitForProcessFinishing(pidBProc);
 
 				close(file_pipes[1]);	/* close before finish */
 
