@@ -12,6 +12,8 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
+#include <signal.h>
+#include <sys/wait.h>
 #include <fcntl.h>
 #include <pthread.h>
 
@@ -35,6 +37,15 @@ typedef struct
 }THREAD_ARG;
 
 int processC(SQR_SHR_MEM_OBJ *pShrMem);
+
+/* When a SIGUSR1 signal arrives, set this variable. */
+volatile sig_atomic_t usrTerminateInt = 0;
+
+void terminateSignal1 (int sig)
+{
+	usrTerminateInt = 1;
+}
+
 
 /*
  * Process A, reads stdI and writes it to pipe
@@ -94,6 +105,18 @@ int processB(int readPD)
 
 	 pid_t pid1 = -1;
 
+		struct sigaction usr_action;
+		sigset_t block_mask;
+		pid_t child_id;
+
+		/* Establish the signal handler. */
+		sigfillset(&block_mask);
+		usr_action.sa_handler = terminateSignal1;
+		usr_action.sa_mask = block_mask;
+		usr_action.sa_flags = 0;
+		sigaction(SIGUSR1, &usr_action, NULL);
+
+
 	 pid1 = fork();
 
 	 switch(pid1)
@@ -111,14 +134,19 @@ int processB(int readPD)
 			 break;
 		 default:
 		 {
-			int data_processed = 0;
+			int readBlen = 0;
 			char buffer[BUFSIZ + 1];
 			memset(buffer, 0, sizeof(buffer));
 
-			 for(int i = 0; i < 100; i++)
+			printf("B ProcG %d\n", getgid());
+
+			 while(!usrTerminateInt)
 			 {
-				  data_processed = read(readPD, buffer, BUFSIZ);
-				  printf("Read %d bytes: %s\n", data_processed, buffer);
+				 printf("B\n");
+
+				 static int i = 0;
+				  readBlen = read(readPD, buffer, BUFSIZ);
+				  printf("Read %d bytes: %s\n", readBlen, buffer);
 
 
 
@@ -128,9 +156,33 @@ int processB(int readPD)
 					  printf("Val SENT with ShrMEM %d\n", i);
 					  pShrMemObj->sqrVal = i;
 					  pShrMemObj->operationStatus = SHR_MEM_FILLED;
+					  i++;
 				  }
 				  sleep(2);
 			 }
+
+			 printf("Got terminating signal\n");
+
+			 if(kill(pid1, SIGKILL))
+				 printf("Kill Error\n");
+			 int wstatus;
+			 do {
+				pid_t w = waitpid(pid1, &wstatus, WUNTRACED | WCONTINUED);
+				if (w == -1) {
+					perror("waitpid");
+					exit(EXIT_FAILURE);
+				}
+
+				if (WIFEXITED(wstatus)) {
+					printf("exited, status=%d\n", WEXITSTATUS(wstatus));
+				} else if (WIFSIGNALED(wstatus)) {
+					printf("killed by signal %d\n", WTERMSIG(wstatus));
+				} else if (WIFSTOPPED(wstatus)) {
+					printf("stopped by signal %d\n", WSTOPSIG(wstatus));
+				} else if (WIFCONTINUED(wstatus)) {
+					printf("continued\n");
+				}
+			} while (!WIFEXITED(wstatus) && !WIFSIGNALED(wstatus));
 
 			munmap(pShrMemObj, SHARED_MEMORY_OBJECT_SIZE+1);
 			close(shm);
@@ -150,11 +202,16 @@ void * readValFromSharedMem(void *arg)
 	SQR_SHR_MEM_OBJ *pShrMemObj = pThreadArg->pShrMem;
 
 	printf("proc C1 id=%d\n", pThreadArg->id);
+	printf ("I'm here!!!  My pid is %d.\n", (int) getpid ());
+	printf("ProcG %d\n", getgid());
 
 	while(1)
 	{
+		printf("C1 alive\n");
 		if(pShrMemObj->operationStatus == SHR_MEM_FILLED)
 		{
+			if(pShrMemObj->sqrVal == 5)
+				kill(getppid(), SIGUSR1);
 			printf("Val GET with ShrMEM %d\n", pShrMemObj->sqrVal);
 			pShrMemObj->operationStatus = SHR_MEM_TAKEN;
 		}
@@ -167,6 +224,8 @@ void * readValFromSharedMem(void *arg)
 void * showThatImAlive(void *arg)
 {
 	printf("proc C2 id=%d\n", *(int*)arg);
+	printf ("I'm here!!!  My pid is %d.\n", (int) getpid ());
+	printf("ProcG %d\n", getgid());
 
 	while(1)
 	{
@@ -182,6 +241,9 @@ int processC(SQR_SHR_MEM_OBJ *pShrMem)
 	int id2, status;
 	pthread_t thread1, thread2;
 	THREAD_ARG thread1Arg;
+
+	printf ("Initial C  My pid is %d.\n", (int) getpid ());
+	printf("ProcG %d\n", getgid());
 
 	thread1Arg.id = 1;
 	thread1Arg.pShrMem = pShrMem;
@@ -244,7 +306,11 @@ int main()
 				/** Process B */
 				printf("CHILD 1\n");
 
+				close(file_pipes[1]);	/* close unused write end of pipe */
+
 				processB(file_pipes[0]);	/* reads pipe, create process C*/
+
+				close(file_pipes[0]);	/* close before finish */
 
 				break;
 			}
@@ -258,7 +324,11 @@ int main()
 				/** Process A */
 				printf("PARENT\n");
 
+				close(file_pipes[0]);	/* close unused read end of pipe */
+
 				processA(file_pipes[1]);	/* Reads stdI and writes pipe */
+
+				close(file_pipes[1]);	/* close before finish */
 
 				break;
 			}
