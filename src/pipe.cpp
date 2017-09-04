@@ -233,38 +233,36 @@ int main()
 
 	if (pipe(file_pipes) == 0)
 	{
+		pid_t pid = -1;
 
-	 pid_t pid = -1;
+		pid = fork();
 
-	 pid = fork();
+		switch(pid)
+		{
+			case 0:	/* child */
+			{
+				/** Process B */
+				printf("CHILD 1\n");
 
-	 switch(pid)
-	 {
-		 case 0:	/* child */
-		 {
-			 /** Process B */
-			 printf("CHILD 1\n");
+				processB(file_pipes[0]);	/* reads pipe, create process C*/
 
-			 processB(file_pipes[0]);	/* reads pipe, create process C*/
+				break;
+			}
+			case -1:	/* error fork */
+			{
+				printf("Fork ERROR\n");
+				break;
+			}
+			default:
+			{
+				/** Process A */
+				printf("PARENT\n");
 
-			 break;
-		 }
-		 case -1:	/* error fork */
-		 {
-			 printf("Fork ERROR\n");
-			 break;
-		 }
-		 default:
-		 {
-			 /** Process A */
-			 printf("PARENT\n");
+				processA(file_pipes[1]);	/* Reads stdI and writes pipe */
 
-			 processA(file_pipes[1]);	/* Reads stdI and writes pipe */
-
-			 break;
-		 }
-	 }
-
+				break;
+			}
+		}
 	 exit(EXIT_SUCCESS);
 	}
 
