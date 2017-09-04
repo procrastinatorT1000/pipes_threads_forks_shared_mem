@@ -19,15 +19,20 @@
 #define  SHR_MEM_FILLED     1
 #define  SHR_MEM_TAKEN      -1
 
+#define SHARED_MEMORY_OBJECT_NAME "my_shared_memory"
+#define SHARED_MEMORY_OBJECT_SIZE sizeof(SQR_SHR_MEM_OBJ)
+
 typedef struct
 {
 	int operationStatus;	/* SHR_MEM_NOT_READY, SHR_MEM_FILLED or SHR_MEM_TAKEN */
 	long sqrVal;
 }SQR_SHR_MEM_OBJ;
 
-#define SHARED_MEMORY_OBJECT_NAME "my_shared_memory"
-#define SHARED_MEMORY_OBJECT_SIZE sizeof(SQR_SHR_MEM_OBJ)
-
+typedef struct
+{
+	int id;
+	SQR_SHR_MEM_OBJ *pShrMem;
+}THREAD_ARG;
 
 void processA()
 {
@@ -43,37 +48,79 @@ void processB()
 
 void * readValFromSharedMem(void *arg)
 {
+	THREAD_ARG *pThreadArg = (THREAD_ARG *) arg;
+	SQR_SHR_MEM_OBJ *pShrMemObj = pThreadArg->pShrMem;
 
+	printf("proc C1 id=%d\n", pThreadArg->id);
+
+	while(1)
+	{
+		if(pShrMemObj->operationStatus == SHR_MEM_FILLED)
+		{
+			printf("Val GET with ShrMEM %d\n", pShrMemObj->sqrVal);
+			pShrMemObj->operationStatus = SHR_MEM_TAKEN;
+		}
+		sleep(1);
+	}
 
 	return NULL;
 }
 
 void * showThatImAlive(void *arg)
 {
+	printf("proc C2 id=%d\n", *(int*)arg);
+
+	while(1)
+	{
+		printf("I'm alive!\n");
+		sleep(1);
+	}
 
 	return NULL;
 }
 
-int processC()
+int processC(SQR_SHR_MEM_OBJ *pShrMem)
 {
-	int id1, id2, result;
+	int id2, status;
 	pthread_t thread1, thread2;
+	THREAD_ARG thread1Arg;
 
-	id1 = 10;
+	thread1Arg.id = 1;
+	thread1Arg.pShrMem = pShrMem;
 
-	result = pthread_create(&thread1, NULL, readValFromSharedMem, &id1);
-	if (result != 0) {
+
+	status = pthread_create(&thread1, NULL, readValFromSharedMem, &thread1Arg);
+	if (status != 0) {
 		perror("Создание первого потока!");
 		return EXIT_FAILURE;
 	}
 
 	id2 = 5;
-	result = pthread_create(&thread2, NULL, showThatImAlive, &id2);
-	if (result != 0) {
+	status = pthread_create(&thread2, NULL, showThatImAlive, &id2);
+	if (status != 0) {
 		perror("Создание второго потока");
 		return EXIT_FAILURE;
 	}
 
+	status = pthread_join(thread1, NULL);
+	if (status != 0) {
+		perror("Ждём первый поток");
+		return EXIT_FAILURE;
+	}
+	else
+	{
+		printf("fir thread fin\n");
+	}
+
+	status = pthread_join(thread2, NULL);
+	if (status != 0) {
+		perror("Ждём второй поток");
+		return EXIT_FAILURE;
+	}
+	else
+	{
+		printf("sec thread fin\n");
+	}
 
 	return EXIT_SUCCESS;
 }
@@ -134,15 +181,7 @@ int main()
 					 /** Process C */
 					 printf("Child 2\n");
 
-					 while(1)
-					 {
-						 if(pShrMemObj->operationStatus == SHR_MEM_FILLED)
-						 {
-							 printf("Val GET with ShrMEM %d\n", pShrMemObj->sqrVal);
-							 pShrMemObj->operationStatus = SHR_MEM_TAKEN;
-						 }
-						 sleep(1);
-					 }
+					 processC(pShrMemObj);
 
 					 _exit(0);
 					 break;
