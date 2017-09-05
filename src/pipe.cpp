@@ -8,7 +8,6 @@
 
 #include <unistd.h>
 #include <stdlib.h>
-#include <stdio.h>
 #include <iostream>
 #include <string.h>
 #include <sys/stat.h>
@@ -123,20 +122,20 @@ int processB(int readPD)
 		/* open shared memory */
 		if ( (shm = shm_open(SHARED_MEMORY_OBJECT_NAME, O_CREAT|O_RDWR, S_IRWXO|S_IRWXG|S_IRWXU)) == -1 )
 		{
-			perror("shm_open");
+			std::cerr << "shm_open";
 			return 1;
 		}
 
 		if ( ftruncate(shm, SHARED_MEMORY_OBJECT_SIZE+1) == -1 )
 		{
-			perror("ftruncate");
+			std::cerr << "ftruncate";
 			return 1;
 		}
 
 		if ( (pShrMemObj = (SQR_SHR_MEM_OBJ *) mmap(0, SHARED_MEMORY_OBJECT_SIZE+1,
 			 PROT_WRITE|PROT_READ, MAP_SHARED, shm, 0)) == (void*)-1 )
 		{
-			perror("mmap");
+			std::cerr << "mmap\n";
 			return 1;
 		}
 
@@ -165,7 +164,7 @@ int processB(int readPD)
 			 _exit(0);
 			 break;
 		 case -1:
-			 perror("FORK error!\n");
+			 std::cerr << "FORK error!\n";
 			 break;
 		 default:
 		 {
@@ -191,7 +190,7 @@ int processB(int readPD)
 			 std::cout << "Got terminating signal\n";
 
 			 if(kill(pidCProc, SIGKILL))
-				 perror("CProc kill Error\n");
+				 std::cerr << "CProc kill Error\n";
 
 			 waitForProcessFinishing(pidCProc);
 
@@ -255,7 +254,7 @@ int processC(SQR_SHR_MEM_OBJ *pShrMem)
 	status = pthread_create(&thread1, NULL, readValFromSharedMem, &thread1Arg);
 	if (status != 0)
 	{
-		perror("Creating First thread Err\n");
+		std::cerr << "Creating First thread Err\n";
 		return EXIT_FAILURE;
 	}
 
@@ -263,14 +262,14 @@ int processC(SQR_SHR_MEM_OBJ *pShrMem)
 	status = pthread_create(&thread2, NULL, showThatImAlive, &id2);
 	if (status != 0)
 	{
-		perror("Creating Second thread Err\n");
+		std::cerr << "Creating Second thread Err\n";
 		return EXIT_FAILURE;
 	}
 
 	status = pthread_join(thread1, NULL);
 	if (status != 0)
 	{
-		perror("Wait for 1st thread\n");
+		std::cerr << "Wait for 1st thread\n";
 		return EXIT_FAILURE;
 	}
 	else
@@ -281,7 +280,7 @@ int processC(SQR_SHR_MEM_OBJ *pShrMem)
 	status = pthread_join(thread2, NULL);
 	if (status != 0)
 	{
-		perror("Wait for 2st thread\n");
+		std::cerr << "Wait for 2st thread\n";
 		return EXIT_FAILURE;
 	}
 	else
@@ -300,7 +299,7 @@ int waitForProcessFinishing(pid_t pid)
 	 {
 		pid_t w = waitpid(pid, &wstatus, WUNTRACED | WCONTINUED);
 		if (w == -1) {
-			perror("waitpid");
+			std::cerr << "waitpid\n";
 			exit(EXIT_FAILURE);
 		}
 
