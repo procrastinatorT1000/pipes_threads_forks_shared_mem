@@ -88,18 +88,18 @@ int getIntFromIn()
 void processA(int writePD)
 {
 	size_t writenBlen = 0;
-//	const char some_data[10] = "123";
 	int val;
+
+	std::cout << "Process A started"<<std::endl;
 
 	 while(!terminateMainProc)
 	 {
 		 val = getIntFromIn();
 		writenBlen = write(writePD, &val, sizeof(val));
-		printf("Wrote %d bytes\n", (int)writenBlen);
-		sleep(1);
+//		std::cout << "Wrote " << (int)writenBlen <<" bytes " << std::endl;
 	 }
 
-	 printf("Got signal for terminating main process\n");
+	 std::cout << "Got signal for terminating main process\n";
 
 	return;
 }
@@ -117,6 +117,8 @@ int processB(int readPD)
 {
 		int shm = 0;
 		SQR_SHR_MEM_OBJ *pShrMemObj = NULL;
+
+		std::cout << "Process B started"<<std::endl;
 
 		/* open shared memory */
 		if ( (shm = shm_open(SHARED_MEMORY_OBJECT_NAME, O_CREAT|O_RDWR, S_IRWXO|S_IRWXG|S_IRWXU)) == -1 )
@@ -157,7 +159,6 @@ int processB(int readPD)
 	 {
 		 case 0:
 			 /** Process C */
-			 printf("Child 2\n");
 
 			 processC(pShrMemObj);
 
@@ -174,9 +175,7 @@ int processB(int readPD)
 			 while(!terminateProcB)
 			 {
 				  readBlen = read(readPD, &readVal, sizeof(readVal));
-				  printf("Read %d bytes: %d\n", readBlen, readVal);
-
-
+//				  std::cout << "Read " << readBlen << " bytes: "<< readVal << std::endl;
 
 				  if(pShrMemObj->operationStatus == SHR_MEM_TAKEN ||
 						  pShrMemObj->operationStatus == SHR_MEM_NOT_READY)
@@ -185,12 +184,11 @@ int processB(int readPD)
 					  sqr *= sqr;
 					  pShrMemObj->sqrVal = sqr;
 					  pShrMemObj->operationStatus = SHR_MEM_FILLED;
-					  printf("Val SENT with ShrMEM %lld\n", pShrMemObj->sqrVal);
+//					  std::cout << "Val SENT with ShrMEM " << pShrMemObj->sqrVal << std::endl;
 				  }
-				  sleep(2);
 			 }
 
-			 printf("Got terminating signal\n");
+			 std::cout << "Got terminating signal\n";
 
 			 if(kill(pidCProc, SIGKILL))
 				 perror("CProc kill Error\n");
@@ -222,10 +220,11 @@ void * readValFromSharedMem(void *arg)
 		{
 			if(pShrMemObj->sqrVal == 100)
 				kill(getppid(), SIGUSR1);
-			printf("Val GET with ShrMEM %lld\n", pShrMemObj->sqrVal);
+
+			std::cout << "Value = " << pShrMemObj->sqrVal<<std::endl;
 			pShrMemObj->operationStatus = SHR_MEM_TAKEN;
 		}
-		sleep(1);
+		sleep(1);	/* for low CPU load, without it this thread catch one CPU thread full */
 	}
 
 	return NULL;
@@ -235,8 +234,8 @@ void * showThatImAlive(void *arg)
 {
 	while(1)
 	{
-		printf("I'm alive!\n");
-		sleep(10);
+		std::cout << "I'm alive!\n";
+		sleep(1);
 	}
 
 	return NULL;
@@ -251,6 +250,7 @@ int processC(SQR_SHR_MEM_OBJ *pShrMem)
 	thread1Arg.id = 1;
 	thread1Arg.pShrMem = pShrMem;
 
+	std::cout << "Process C started"<<std::endl;
 
 	status = pthread_create(&thread1, NULL, readValFromSharedMem, &thread1Arg);
 	if (status != 0)
@@ -275,7 +275,7 @@ int processC(SQR_SHR_MEM_OBJ *pShrMem)
 	}
 	else
 	{
-		printf("1st thread fin\n");
+		std::cout << "1st thread fin\n";
 	}
 
 	status = pthread_join(thread2, NULL);
@@ -286,7 +286,7 @@ int processC(SQR_SHR_MEM_OBJ *pShrMem)
 	}
 	else
 	{
-		printf("2nd thread fin\n");
+		std::cout << "2nd thread fin\n";
 	}
 
 	return EXIT_SUCCESS;
@@ -305,13 +305,13 @@ int waitForProcessFinishing(pid_t pid)
 		}
 
 		if (WIFEXITED(wstatus)) {
-			printf("exited, status=%d\n", WEXITSTATUS(wstatus));
+			std::cout << "exited, status= " << WEXITSTATUS(wstatus) << std::endl;
 		} else if (WIFSIGNALED(wstatus)) {
-			printf("killed by signal %d\n", WTERMSIG(wstatus));
+			std::cout << "killed by signal "<< WTERMSIG(wstatus) <<  std::endl;
 		} else if (WIFSTOPPED(wstatus)) {
-			printf("stopped by signal %d\n", WSTOPSIG(wstatus));
+			std::cout << "stopped by signal "<< WSTOPSIG(wstatus) << std::endl;
 		} else if (WIFCONTINUED(wstatus)) {
-			printf("continued\n");
+			std::cout << "continued\n";
 		}
 	} while (!WIFEXITED(wstatus) && !WIFSIGNALED(wstatus));
 
@@ -342,7 +342,6 @@ int main()
 			case 0:	/* child */
 			{
 				/** Process B */
-				printf("CHILD 1\n");
 
 				close(file_pipes[1]);	/* close unused write end of pipe */
 
@@ -354,13 +353,12 @@ int main()
 			}
 			case -1:	/* error fork */
 			{
-				printf("Fork ERROR\n");
+				std::cout << "Fork ERROR\n";
 				break;
 			}
 			default:
 			{
 				/** Process A */
-				printf("PARENT\n");
 
 				close(file_pipes[0]);	/* close unused read end of pipe */
 
