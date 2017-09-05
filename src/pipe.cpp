@@ -17,6 +17,7 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <sstream>
 
 #define  SHR_MEM_NOT_READY  0
 #define  SHR_MEM_FILLED     1
@@ -54,6 +55,30 @@ void terminateMainProcHandl (int sig)
 	terminateMainProc = 1;
 }
 
+/* Safety get integer form input */
+int getIntFromIn()
+{
+    int x=0;
+
+    while(true)
+    {
+        std::cout << "Enter an integer: " << std::endl;
+        std::string s;
+        std::getline(std::cin, s);
+
+        std::stringstream stream(s);
+        if(stream >> x)
+        {
+            break; /* Entered value is good */
+        }
+        else
+        {
+        	std::cout << "Invalid! Value should be >= -2147483648 and <= 2147483647"<< std::endl;
+        }
+    }
+    return x;
+}
+
 /*
  * Process A, reads stdI and writes it to pipe
  *
@@ -68,7 +93,7 @@ void processA(int writePD)
 
 	 while(!terminateMainProc)
 	 {
-		std::cin >> val;
+		 val = getIntFromIn();
 		writenBlen = write(writePD, &val, sizeof(val));
 		printf("Wrote %d bytes\n", (int)writenBlen);
 		sleep(1);
