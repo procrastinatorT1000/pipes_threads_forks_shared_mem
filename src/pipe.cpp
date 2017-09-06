@@ -143,7 +143,8 @@ int processB(int readPD)
 			return 1;
 		}
 
-		memset(pShrMemObj, 0, SHARED_MEMORY_OBJECT_SIZE);
+		pShrMemObj->sqrVal = -1;
+		pShrMemObj->operationStatus = SHR_MEM_NOT_READY;
 
 		pid_t pidCProc = -1;
 		struct sigaction usr_action;
