@@ -63,9 +63,13 @@ int getIntFromIn()
     {
         std::cout << "Enter an integer: " << std::endl;
         std::string s;
-        std::getline(std::cin, s);
+        if(!std::getline(std::cin, s))	/* check correct getting string */
+        	break;	/* when program is going to terminate, getline()
+        	returns 0, and puts '\0' to string, without handling of return
+        	value process is going to infinite loop */
 
         std::stringstream stream(s);
+
         if(stream >> x)
         {
             break; /* Entered value is good */
