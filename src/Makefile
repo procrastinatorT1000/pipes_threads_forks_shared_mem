@@ -2,14 +2,17 @@ CC=g++
 #-lrt For shared mem, -pthread for threads
 FLAGS=-lrt -pthread
 
-all: pipe
+all: task
 
-pipe: pipe.o
-	$(CC) pipe.o $(FLAGS) -o pipe
+task: main.o processes.o
+	$(CC) main.o processes.o $(FLAGS) -o task
 
-pipe.o: pipe.cpp
-	$(CC) -c pipe.cpp
+main.o: main.cpp
+	$(CC) -c main.cpp
+
+processes.o: processes.cpp
+	$(CC) -c processes.cpp
 
 clean:
-	rm -rf *.o pipe
+	rm -rf *.o task
 
